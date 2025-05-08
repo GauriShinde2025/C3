@@ -1,78 +1,96 @@
-import random
 
-# Distance between 4 cities (symmetric matrix)
-distance = [
-    [0, 2, 9, 10],
-    [1, 0, 6, 4],
-    [15, 7, 0, 8],
-    [6, 3, 12, 0]
-]
+import numpy as np
+# Function to calculate distance between two cities
+def distance(city1, city2):
+    return np.linalg.norm(city1 - city2)
 
-num_cities = 4
-num_ants = 4
-num_iterations = 50
-pheromone = [[1 for _ in range(num_cities)] for _ in range(num_cities)]
-alpha = 1   # pheromone factor
-beta = 2    # distance factor
-evaporation = 0.5
-Q = 100
+# Function to initialize pheromone trails
+def init_pheromone(num_cities):
+    return np.ones((num_cities, num_cities))
 
-def calculate_prob(current, visited):
-    probs = []
-    total = 0
-    for j in range(num_cities):
-        if j not in visited:
-            tau = pheromone[current][j] ** alpha
-            eta = (1 / distance[current][j]) ** beta
-            total += tau * eta
-            probs.append((j, tau * eta))
-    return [(city, prob / total) for city, prob in probs]
+# Function to update pheromone trails
+def update_pheromone(pheromone, delta_pheromone, rho):
+    return (1 - rho) * pheromone + delta_pheromone
 
-def choose_next(probabilities):
-    cities = [city for city, _ in probabilities]
-    weights = [prob for _, prob in probabilities]
-    return random.choices(cities, weights=weights)[0]
-
-best_path = []
-best_cost = float('inf')
-
-for iteration in range(num_iterations):
-    all_paths = []
-    all_costs = []
-
+# Function to perform ant movement
+def ant_movement(num_ants, pheromone, distances, alpha, beta):
+    num_cities = len(distances)
+    paths = []
     for ant in range(num_ants):
         path = []
         visited = set()
-        current = random.randint(0, num_cities - 1)
-        path.append(current)
-        visited.add(current)
-
-        while len(path) < num_cities:
-            probs = calculate_prob(current, visited)
-            next_city = choose_next(probs)
-            path.append(next_city)
+        current_city = np.random.randint(num_cities)
+        visited.add(current_city)
+        path.append(current_city)
+        while len(visited) < num_cities:
+            probabilities = []
+            for city in range(num_cities):
+                if city not in visited:
+                    pheromone_factor = pheromone[current_city][city] ** alpha
+                    distance_factor = (1.0 / distances[current_city][city]) ** beta
+                    probabilities.append((city, pheromone_factor * distance_factor))
+            probabilities = np.array(probabilities)
+            probabilities[:, 1] /= np.sum(probabilities[:, 1])
+            next_city = np.random.choice(probabilities[:, 0], p=probabilities[:, 1])
             visited.add(next_city)
-            current = next_city
+            path.append(int(next_city))
+            current_city = int(next_city)
+        paths.append(path)
+    return paths
 
-        path.append(path[0])  # return to start
-        cost = sum(distance[path[i]][path[i+1]] for i in range(num_cities))
-        all_paths.append(path)
-        all_costs.append(cost)
+# Function to calculate total distance of a path
+def total_distance(path, distances):
+    total = 0
+    num_cities = len(path)
+    for i in range(num_cities - 1):
+        total += distances[path[i]][path[i + 1]]
+    total += distances[path[-1]][path[0]]
+    return total
 
-        if cost < best_cost:
-            best_cost = cost
-            best_path = path
+# Function to evaporate pheromone trails
+def evaporate_pheromone(pheromone, evaporation_rate):
+    return (1 - evaporation_rate) * pheromone
 
-    # Update pheromones
+# Function to solve TSP using Ant Colony Optimization
+def solve_tsp(num_cities, num_ants, iterations, alpha, beta, rho, evaporation_rate):
+    cities = np.random.rand(num_cities, 2)  # Generate random cities
+    distances = np.zeros((num_cities, num_cities))
     for i in range(num_cities):
-        for j in range(num_cities):
-            pheromone[i][j] *= (1 - evaporation)
+        for j in range(i + 1, num_cities):
+            dist = distance(cities[i], cities[j])
+            distances[i][j] = dist
+            distances[j][i] = dist
+    
+    pheromone = init_pheromone(num_cities)
+    best_distance = float('inf')
+    best_path = None
+    
+    for _ in range(iterations):
+        paths = ant_movement(num_ants, pheromone, distances, alpha, beta)
+        for path in paths:
+            path_distance = total_distance(path, distances)
+            if path_distance < best_distance:
+                best_distance = path_distance
+                best_path = path
+        delta_pheromone = np.zeros((num_cities, num_cities))
+        for path in paths:
+            for i in range(num_cities - 1):
+                delta_pheromone[path[i]][path[i + 1]] += 1 / total_distance(path, distances)
+            delta_pheromone[path[-1]][path[0]] += 1 / total_distance(path, distances)
+        pheromone = update_pheromone(pheromone, delta_pheromone, rho)
+        pheromone = evaporate_pheromone(pheromone, evaporation_rate)
+    
+    return best_distance, best_path
 
-    for path, cost in zip(all_paths, all_costs):
-        for i in range(num_cities):
-            a, b = path[i], path[i+1]
-            pheromone[a][b] += Q / cost
-            pheromone[b][a] += Q / cost
+# Example usage
+num_cities = 20
+num_ants = 10
+iterations = 100
+alpha = 1.0
+beta = 2.0
+rho = 0.1
+evaporation_rate = 0.1
 
-print("Best path:", best_path)
-print("Shortest distance:", best_cost)
+best_distance, best_path = solve_tsp(num_cities, num_ants, iterations, alpha, beta, rho, evaporation_rate)
+print(f"Shortest distance: {best_distance}")
+print(f"Best path: {best_path}")
